@@ -10,14 +10,40 @@
 #   docker exec -it build bash
 #   docker exec -it build cargo build --release
 #
+# Options:
+#   --dname NAME   use NAME as the container name (default: build)
+#
 # Bump IMAGE_VERSION whenever you change the Dockerfile.
+# Mounts only apply when the container is created: after changing them,
+# run `docker rm -f build` and then ./build.sh again.
 set -euo pipefail
 
 IMAGE_NAME="${IMAGE_NAME:-my-rust-builder}"
-IMAGE_VERSION="${IMAGE_VERSION:-1.0.1}"
+IMAGE_VERSION="${IMAGE_VERSION:-1.0.3}"
 IMAGE="${IMAGE_NAME}:${IMAGE_VERSION}"
 CONTAINER_NAME="${CONTAINER_NAME:-build}"
 CARGO_VOLUME="${CARGO_VOLUME:-${IMAGE_NAME}-cargo-cache}"
+
+usage() {
+    echo "Usage: $0 [--dname NAME]"
+    echo "  --dname NAME   container name (default: ${CONTAINER_NAME})"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dname)
+            [[ $# -ge 2 && -n "$2" ]] || { echo "error: --dname needs a value" >&2; exit 1; }
+            CONTAINER_NAME="$2"; shift 2 ;;
+        --dname=*)
+            CONTAINER_NAME="${1#--dname=}"
+            [[ -n "$CONTAINER_NAME" ]] || { echo "error: --dname needs a value" >&2; exit 1; }
+            shift ;;
+        -h|--help)
+            usage; exit 0 ;;
+        *)
+            echo "error: unknown argument: $1" >&2; usage >&2; exit 1 ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -46,10 +72,11 @@ create_container() {
         --user "$(id -u):$(id -g)" \
         ${local_user_mounts[@]+"${local_user_mounts[@]}"} \
         -v "$SCRIPT_DIR":/workspace \
+        -v "$HOME":"$HOME" \
         -v "$CARGO_VOLUME":/cargo-cache \
         -e CARGO_HOME=/cargo-cache \
-        -e HOME=/tmp \
-        -w /workspace \
+        -e HOME="$HOME" \
+        -w "$HOME" \
         "$IMAGE" \
         bash >/dev/null
 }
@@ -73,6 +100,3 @@ else
 fi
 
 echo ">> Ready. Use: docker exec -it $CONTAINER_NAME bash"
-
-
-
